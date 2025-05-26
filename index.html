@@ -139,7 +139,7 @@
     }
 
     // WebSocket 接收视频流
-    ws = new WebSocket('ws://192.168.2.28:39999');
+    ws = new WebSocket('ws://127.0.0.1:39999');
     ws.binaryType = "arraybuffer";
     ws.onmessage = async (event) => {
       const res = await processVideo(new Blob([event.data]));
