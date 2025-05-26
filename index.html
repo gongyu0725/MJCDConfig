@@ -3,12 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <title>Video Render</title>
+   <style>
+    #coordinatesLabel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+    }
+  </style>
 </head>
 <body>
+  <div id="coordinatesLabel">Face coordinates: x=0, y=0, w=0, h=0</div>
   <canvas id="canvasElement" style="width: 400px; height: 300px; background: #000;"></canvas>
   <script>
     const canvasElement = document.getElementById('canvasElement');
     const ctx = canvasElement.getContext('2d');
+    const coordinatesLabel = document.getElementById('coordinatesLabel');
+
 
     let ws = null;
     let decoder = null;
@@ -117,6 +133,7 @@
         const mouthY = view.getInt32(68, false);
         const videoData = arrayBuffer.slice(72, 72 + dataLen);
 
+        coordinatesLabel.textContent = `Face coordinates: x=${x}, y=${y}, w=${w}, h=${h}`;
 
       return {
           index: Number(index),
