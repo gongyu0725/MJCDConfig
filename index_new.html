@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Video Render</title>
+</head>
+<body>
+  <canvas id="canvasElement" style="width: 400px; height: 300px; background: #000;"></canvas>
+  <script>
+    const canvasElement = document.getElementById('canvasElement');
+    const ctx = canvasElement.getContext('2d');
+
+    let ws = null;
+    let decoder = null;
+    let isConfigured = false;
+    let timestamp = 0;
+    let frameQueue = [];
+    let isRendering = false;
+
+    // 创建解码器
+    async function initDecoder(config) {
+      const support = await VideoDecoder.isConfigSupported(config);
+      if (!support.supported) {
+        console.error("不支持的解码器配置：", support);
+        return;
+      }
+
+      decoder = new VideoDecoder({
+        output: frame => {
+          frameQueue.push(frame);
+          if (!isRendering) renderFrames();
+        },
+        error: e => console.error("解码错误:", e)
+      });
+
+      decoder.configure(config);
+      isConfigured = true;
+    }
+
+    // 解码数据
+    function decodeH264(data) {
+      if (!isConfigured || !decoder || decoder.state === "closed") return;
+
+      const keyFrame = isKeyFrame(data);
+      const chunk = new EncodedVideoChunk({
+        type: keyFrame ? "key" : "delta",
+        timestamp,
+        duration: 1000 / 30,
+        data
+      });
+
+      timestamp += 1000 / 30;
+
+      try {
+        decoder.decode(chunk);
+      } catch (e) {
+        console.error("decode 失败：", e);
+      }
+    }
+
+    // 渲染帧队列
+    function renderFrames() {
+      if (frameQueue.length === 0) {
+        isRendering = false;
+        return;
+      }
+      isRendering = true;
+
+      const frame = frameQueue.shift();
+      try {
+        ctx.drawImage(frame, 0, 0, canvasElement.width, canvasElement.height);
+        // ctx.drawImage(frame, 0, 0, frame.displayWidth, frame.displayHeight);
+      } catch (e) {
+        console.warn("drawImage 错误：", e);
+      }
+      frame.close();
+      requestAnimationFrame(renderFrames);
+    }
+
+    // 关键帧判断
+    function isKeyFrame(buffer) {
+      const data = new Uint8Array(buffer);
+      for (let i = 0; i < data.length - 4; i++) {
+        if (
+          data[i] === 0x00 &&
+          data[i + 1] === 0x00 &&
+          (data[i + 2] === 0x01 || (data[i + 2] === 0x00 && data[i + 3] === 0x01))
+        ) {
+          const offset = data[i + 2] === 0x01 ? i + 3 : i + 4;
+          const nalHeader = data[offset];
+          const nalUnitType = nalHeader & 0x1F;
+          if (nalUnitType === 5) return true;
+        }
+      }
+      return false;
+    }
+
+    // 处理数据包结构（头72字节为元数据）
+    async function processVideo(blob) {
+      const arrayBuffer = await blob.arrayBuffer();
+      const view = new DataView(arrayBuffer);
+      const serId = view.getUint32(0, false);
+        const dataLen = view.getInt32(12, false);
+        const index = view.getBigInt64(4, false);
+        const imgWidth = view.getInt32(16, false);
+        const imgHeight = view.getInt32(20, false);
+        const hasFace = Boolean(view.getInt32(24, false));
+        const faceNum = view.getInt32(28, false);
+        const faceIndex = view.getBigInt64(32, false);
+        const w = view.getInt32(40, false);
+        const h = view.getInt32(44, false);
+        const x = view.getInt32(48, false);
+        const y = view.getInt32(52, false);
+        const mouthW = view.getInt32(56, false);
+        const mouthH = view.getInt32(60, false);
+        const mouthX = view.getInt32(64, false);
+        const mouthY = view.getInt32(68, false);
+        const videoData = arrayBuffer.slice(72, 72 + dataLen);
+
+
+      return {
+          index: Number(index),
+          dataLen,
+          imgWidth,
+          imgHeight,
+          hasFace,
+          faceNum,
+          faceIndex: Number(faceIndex),
+          w,
+          h,
+          x,
+          y,
+          mouthW,
+          mouthH,
+          mouthX,
+          mouthY,
+          videoData
+        };
+    }
+
+    // WebSocket 接收视频流
+    ws = new WebSocket('ws://192.168.2.28:39999');
+    ws.binaryType = "arraybuffer";
+    ws.onmessage = async (event) => {
+      const res = await processVideo(new Blob([event.data]));
+
+      if (!isConfigured) {
+        canvasElement.width = res.imgWidth;
+        canvasElement.height = res.imgHeight;
+        await initDecoder({
+          codec: "avc1.64001f", // baseline profile level 3.1
+          optimizeForLatency: true,
+          hardwareAcceleration: "prefer-hardware",
+          codedWidth: res.imgWidth,
+          codedHeight: res.imgHeight,
+        });
+      }
+      console.log("x="+res.x+",y="+res.y+",w="+res.w+",h="+res.h);
+      decodeH264(res.videoData);
+    };
+  </script>
+</body>
+</html>
